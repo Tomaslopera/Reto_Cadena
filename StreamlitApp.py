@@ -31,7 +31,6 @@ with st.form("parametros_form"):
     valor_fraccion = st.text_input("Valor de la fracción")
     serie = st.text_input("Serie")
     numero = st.text_input("Número")
-    numero_escrito = st.text_area("Número escrito (separado por comas)", help="Ejemplo: veinte, veintitres")
 
     submitted = st.form_submit_button("Ejecutar validación")
 
@@ -61,7 +60,6 @@ if submitted and uploaded_file:
             valor_fraccion=valor_fraccion,
             serie=serie,
             numero=numero,
-            numero_escrito=[x.strip() for x in numero_escrito.split(",") if x.strip()]
         )
 
         
