@@ -19,22 +19,6 @@ class TextractOCR:
                 raw_text += item["Text"] + "\n"
 
         return raw_text
-    
-
-    def extract_text_from_image(self, i):
-        image = Image.open(BytesIO(i))
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")  # Asegúrate que sea PNG si ese es el formato real
-        image_bytes = buffer.getvalue()
-
-        response = self.textract.detect_document_text(Document={'Bytes': image_bytes})
-
-        raw_text = ""
-        for item in response["Blocks"]:
-            if item["BlockType"] == "LINE":
-                raw_text += item["Text"] + "\n"
-
-        return raw_text
 
 
     def extract_and_save(self, file_path, output_txt_path):

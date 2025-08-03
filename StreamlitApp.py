@@ -1,19 +1,17 @@
-# Importaciones necesarias
-import boto3
-import re
-import datetime
-import io
-from io import BytesIO
+# Import necessary libraries
 import os
+from io import BytesIO
 import streamlit as st
 from PIL import Image
 from Validaciones import Validaciones
 from TextractOCR import TextractOCR
 
+# Initialize TextractOCR
 ocr = TextractOCR()
 
+# --- Streamlit app configuration ---
 st.set_page_config(page_title="Reto FT - Cadena SA", layout="centered")
-st.markdown("<h1 style='color: white; background-color:#1e3a5f; padding:10px;'>Reto FT - Cadena SA</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='color: white; background-color:#1e3a5f; padding:1px; text-align:center; '>Reto FT - Cadena SA</h1>", unsafe_allow_html=True)
 
 st.write("## Sube una imagen del billete")
 uploaded_file = st.file_uploader("Selecciona una imagen", type=["png", "jpg", "jpeg"])
@@ -39,19 +37,19 @@ with st.form("parametros_form"):
 
 if submitted and uploaded_file:
     with st.spinner("Procesando imagen con Textract y validando..."):
-        # Guardar imagen temporal
+        
         temp_path = f"temp_{uploaded_file.name}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        # Extraer texto con TextractOCR
+        
         raw_text = ocr.extract_text_from_file(temp_path)
-        st.text_area("Texto extraído:", raw_text, height=150)
+        st.text_area("Texto extraído:", raw_text, height=300)
 
-        # Eliminar archivo temporal
+        
         os.remove(temp_path)
 
-        # Crear instancia del validador
+        
         validador = Validaciones(
             raw_text=raw_text,
             sorteo=sorteo,
@@ -66,11 +64,11 @@ if submitted and uploaded_file:
             numero_escrito=[x.strip() for x in numero_escrito.split(",") if x.strip()]
         )
 
-        # Ejecutar validaciones
+        
         resultados = validador.run_all_checks()
         counts = validador.run_all_counts()
 
-        # Mostrar resultados
+        
         st.success("### Resultados de las validaciones:")
         for clave, valor in resultados.items():
             color = "🟢" if valor else "🔴"
@@ -81,4 +79,4 @@ if submitted and uploaded_file:
             st.markdown(f"- **{clave} count**: {valor}")
 
 elif submitted and not uploaded_file:
-    st.error("❗ Debes subir una imagen para realizar la validación.")
+    st.error("Debes subir una imagen para realizar la validación.")
