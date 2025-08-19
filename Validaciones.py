@@ -1,4 +1,7 @@
 import re
+from RekognitionService import RekognitionService
+from typing import Dict, List, Tuple
+from PIL import Image
 
 class Validaciones:
     def __init__(self, raw_text: str, sorteo: str, fecha_sorteo: str, dia_de_juego: str, hora_de_juego: str, premio_mayor: str, valor_billete: str, valor_fraccion: str, serie: str, numero: str):
@@ -111,3 +114,46 @@ class Validaciones:
             "serie": self.count_serie(),
             "numero": self.count_numero()
         }
+        
+
+def validar_logo_cruz_roja_por_texto(
+    img_pil: Image.Image, 
+    region: str = "us-east-1", 
+    min_conf: float = 80.0
+) -> Dict:
+    """
+    Usa Rekognition DetectText para confirmar la presencia de 'Cruz Roja Colombiana'.
+    Devuelve: {'found': bool, 'boxes_norm': [bboxes], 'raw': respuesta_rekognition}
+    """
+    srv = RekognitionService(region_name=region)
+    image_bytes = srv._pil_to_bytes(img_pil)
+    res = srv.find_cruz_roja_by_text(image_bytes, min_conf=min_conf)
+    return {"found": res["found"], "boxes_norm": res["boxes"], "raw": res["raw"]}
+
+def localizar_logo_por_template(
+    ticket_img: Image.Image, 
+    logo_img: Image.Image, 
+    threshold: float = 0.78
+) -> List[Tuple[int,int,int,int]]:
+    """
+    Fallback local para ubicar el logo. Si OpenCV no está disponible, retorna [].
+    """
+    srv = RekognitionService()
+    return srv.template_match_logo(ticket_img, logo_img, threshold=threshold)
+
+def validar_logo_cruz_roja_por_palabras(
+    img_pil: Image.Image,
+    region: str = "us-east-1",
+    min_conf: float = 70.0,
+    gap_px: int = 160,
+    y_tol: float = 0.12
+) -> Dict:
+    srv = RekognitionService(region_name=region)
+    res = srv.find_phrase_by_words(
+        srv._pil_to_bytes(img_pil),
+        target_words=("cruz","roja","colombiana"),
+        min_conf=min_conf,
+        word_gap_px=gap_px,
+        y_tol=y_tol
+    )
+    return res
