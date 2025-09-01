@@ -1,4 +1,4 @@
-# --- Streamlit + Textract + Rekognition (detección de etiquetas) ---
+# --- Streamlit + Textract + Rekognition (Etiquetas) + OpenCV (Template Matching) ---
 
 import os
 from io import BytesIO
@@ -7,7 +7,8 @@ from PIL import Image
 
 from Validaciones import Validaciones
 from TextractOCR import TextractOCR
-from RekognitionService import RekognitionService
+from RekognitionService import RekognitionService           # usa detect_labels y draw_label_instances_with_names
+from OpenCVMatcher import OpenCVMatcher                     # usa match_multiple y match_article_style
 
 # =========================
 # Configuración de página
@@ -20,41 +21,58 @@ st.markdown(
 )
 
 # =========================
-# Barra lateral: Rekognition
+# Barra lateral
 # =========================
-st.sidebar.header("Rekognition – Parámetros")
-aws_region = st.sidebar.text_input("AWS Region", value="us-east-1")
-
-modo_rekognition = st.sidebar.radio(
-    "¿Qué análisis visual quieres hacer?",
-    options=["Etiquetas (Rekognition)", "Frase (texto)", "Imagen de referencia"],
+st.sidebar.header("Análisis visual")
+modo_analisis = st.sidebar.radio(
+    "¿Qué análisis quieres ejecutar?",
+    options=["Etiquetas (Rekognition)", "Reconocimiento Imágenes (OpenCV)"],
     index=0
 )
 
-# Parámetros DETECCIÓN DE ETIQUETAS
-if modo_rekognition == "Etiquetas (Rekognition)":
-    max_labels = st.sidebar.slider("Máximo de etiquetas", 5, 50, 25)
-    min_conf_labels = st.sidebar.slider("Confianza mínima (%)", 50, 99, 80)
+# --- Parámetros Rekognition (Etiquetas) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Rekognition – Etiquetas")
+aws_region = st.sidebar.text_input("AWS Region", value="us-east-1")
+max_labels = st.sidebar.slider("Máximo de etiquetas", 5, 100, 30)
+min_conf_labels = st.sidebar.slider("Confianza mínima (%)", 50, 99, 70)
 
-# Parámetros para búsqueda por frase
-if modo_rekognition == "Frase (texto)":
-    frase_objetivo = st.sidebar.text_input(
-        "Frase objetivo",
-        value="Cruz Roja Colombiana",
-        help="Se buscará como secuencia de palabras cercanas en la misma línea visual"
-    )
-    conf_min_palabra = st.sidebar.slider("Confianza mínima por palabra", 50, 99, 70)
-    gap_px = st.sidebar.slider("Distancia máx. entre palabras (px)", 40, 300, 160)
-    y_tol_pct = st.sidebar.slider("Tolerancia vertical (%)", 2, 20, 12) / 100.0
+# --- Parámetros OpenCV (Básico) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("OpenCV básico (estilo artículo)")
+cv_basic = st.sidebar.checkbox("Usar modo básico (1 sola escala)", value=False)
+cv_basic_scale = st.sidebar.number_input(
+    "Escala de plantilla (p. ej. 0.48)",
+    min_value=0.10, max_value=3.00, value=1.00, step=0.02
+)
+cv_templates = st.sidebar.file_uploader(
+    "Sube 1..N plantillas (recortes a detectar)",
+    type=["png", "jpg", "jpeg"],
+    accept_multiple_files=True
+)
 
-# Parámetros para búsqueda por imagen
-if modo_rekognition == "Imagen de referencia":
-    ref_logo_file = st.sidebar.file_uploader(
-        "Sube la imagen de referencia (logo recortado)",
-        type=["png", "jpg", "jpeg"],
-        help="Mejor PNG con fondo transparente; si no tienes OpenCV instalado devolverá 0 coincidencias."
-    )
-    umbral_tm = st.sidebar.slider("Umbral template matching", 60, 95, 78) / 100.0
+# --- Parámetros OpenCV (Template Matching avanzado) ---
+# st.sidebar.markdown("---")
+# st.sidebar.subheader("OpenCV – Template Matching (local)")
+# cv_threshold = st.sidebar.slider("Umbral (TM_CCOEFF_NORMED)", 50, 99, 75) / 100.0
+# cv_scales_str = st.sidebar.text_input("Escalas (coma)", value="1.4,1.3,1.2,1.1,1.0,0.95,0.9,0.85,0.8,0.75")
+# cv_use_edges = st.sidebar.checkbox("Usar Canny (bordes)", value=True)
+# cv_use_clahe = st.sidebar.checkbox("Usar CLAHE (contraste)", value=True)
+# cv_nms_iou = st.sidebar.slider("NMS IoU", 10, 90, 40) / 100.0
+# cv_max_per_tpl = st.sidebar.slider("Máx. detecciones por plantilla", 10, 200, 50)
+cv_threshold = 75
+cv_scales_str = "1.4,1.3,1.2,1.1,1.0,0.95,0.9,0.85,0.8,0.75"
+cv_use_edges = True
+cv_use_clahe = True
+cv_nms_iou = 0.4
+cv_max_per_tpl = 50
+
+def _parse_scales(s: str):
+    try:
+        vals = [float(x.strip()) for x in s.split(",") if x.strip()]
+        return [v for v in vals if v > 0]
+    except Exception:
+        return [1.0]
 
 # =========================
 # Carga de imagen FT
@@ -69,7 +87,7 @@ else:
     image = None
 
 # =========================
-# Formulario de parámetros (OCR/Validaciones)
+# Formulario de parámetros (Textract/Validaciones)
 # =========================
 st.write("## Parámetros de validación")
 with st.form("parametros_form"):
@@ -86,11 +104,10 @@ with st.form("parametros_form"):
     submitted = st.form_submit_button("Ejecutar validación")
 
 # =========================
-# Pipeline (Textract + Validaciones + Rekognition)
+# Pipeline
 # =========================
 if submitted and image is not None:
     with st.spinner("Procesando imagen con Textract y validando..."):
-
         # ----------- TEXTRACT -----------
         temp_path = f"temp_{uploaded_file.name}"
         with open(temp_path, "wb") as f:
@@ -124,88 +141,120 @@ if submitted and image is not None:
 
         st.subheader("Resultados de las validaciones")
         for clave, valor in resultados.items():
-            color = "🟢" if valor else "🔴"
-            st.markdown(f"- **{clave}**: {color} {valor}")
+            estado = "OK" if valor else "FALLO"
+            st.markdown(f"- **{clave}**: {estado}")
 
         st.info("Conteo de coincidencias")
         for clave, valor in counts.items():
             st.markdown(f"- **{clave}**: {valor}")
 
-        # ----------- REKOGNITION -----------
-        st.subheader("Análisis visual (Rekognition)")
-        rk = RekognitionService(region_name=aws_region)
+        # ----------- ANÁLISIS VISUAL -----------
+        st.subheader("Análisis visual")
 
-        # preparar bytes de imagen
-        buff = BytesIO()
-        image.save(buff, format="PNG")
-        img_bytes = buff.getvalue()
+        # preparar bytes de imagen (para AWS)
+        buff = BytesIO(); image.save(buff, format="PNG"); img_bytes = buff.getvalue()
 
-        # === MODO: ETIQUETAS (como la demo de AWS) ===
-        if modo_rekognition == "Etiquetas (Rekognition)":
-            labels_resp = rk.detect_labels(img_bytes, max_labels=int(max_labels), min_conf=float(min_conf_labels))
-            # Tabla de etiquetas
-            st.markdown("#### Etiquetas detectadas")
-            if labels_resp.get("Labels"):
-                # Mostrar lista con nombre, confianza, padres, instancias
-                rows = []
-                for lab in labels_resp["Labels"]:
-                    name = lab.get("Name", "")
-                    conf = round(lab.get("Confidence", 0.0), 2)
-                    parents = ", ".join([p.get("Name", "") for p in lab.get("Parents", [])]) or "-"
-                    instances = len(lab.get("Instances", []))
-                    rows.append((name, conf, parents, instances))
-                st.dataframe(
-                    {"Etiqueta": [r[0] for r in rows],
-                     "Confianza (%)": [r[1] for r in rows],
-                     "Padres": [r[2] for r in rows],
-                     "#Instancias": [r[3] for r in rows]}
+        if modo_analisis == "Etiquetas (Rekognition)":
+            try:
+                rk = RekognitionService(region_name=aws_region)
+                labels_res = rk.detect_labels_pretty(
+                    img_bytes, max_labels=int(max_labels), min_conf=float(min_conf_labels)
                 )
-            else:
-                st.info("Sin etiquetas a ese umbral.")
 
-            # Dibujo de cajas (si Rekognition entrega Instances)
-            vis_img = rk.draw_label_instances_with_names(image, labels_resp)
-            if vis_img is not None:
-                st.image(vis_img, caption="Cajas de instancias por etiqueta")
-
-            with st.expander("Respuesta cruda"):
-                st.json(labels_resp)
-
-        # === MODO: FRASE (texto con Rekognition Text) ===
-        elif modo_rekognition == "Frase (texto)":
-            objetivo = [w.strip().lower() for w in frase_objetivo.split() if w.strip()]
-            if len(objetivo) < 1:
-                st.warning("Ingresa al menos una palabra en la frase objetivo.")
-            else:
-                res = rk.find_phrase_by_words(
-                    image_bytes=img_bytes,
-                    target_words=tuple(objetivo),
-                    min_conf=float(conf_min_palabra),
-                    word_gap_px=int(gap_px),
-                    y_tol=float(y_tol_pct),
-                )
-                if res.get("found"):
-                    st.success(f"Se detectó la frase objetivo: '{frase_objetivo}'.")
-                    vis = rk.draw_boxes(image, res["boxes_px"], width=5)
-                    st.image(vis, caption="Ubicación estimada (frase)")
+                st.markdown("#### Etiquetas detectadas")
+                if labels_res["labels"]:
+                    st.dataframe({
+                        "Etiqueta": [x["name"] for x in labels_res["labels"]],
+                        "Confianza (%)": [x["confidence"] for x in labels_res["labels"]],
+                        "Padres": [", ".join(x["parents"]) if x["parents"] else "-" for x in labels_res["labels"]],
+                        "#Instancias": [x["instances"] for x in labels_res["labels"]],
+                    }, use_container_width=True)
                 else:
-                    st.warning("No se detectó la frase objetivo. Ajusta confianza, distancia o tolerancia.")
-                    with st.expander("Detalle / debug"):
-                        st.write(res.get("debug_matches", []))
+                    st.info("Sin etiquetas a ese umbral.")
 
-        # === MODO: IMAGEN DE REFERENCIA (template matching) ===
-        else:
-            if ref_logo_file is None:
-                st.info("Sube una imagen de referencia (logo recortado) en la barra lateral.")
+                # Dibujo de instancias (si existen)
+                if labels_res["labeled_boxes"]:
+                    vis_img = rk.draw_labeled_boxes(image, labels_res["labeled_boxes"])
+                    st.image(vis_img, caption="Cajas detectadas (DetectLabels)")
+                with st.expander("Respuesta cruda"):
+                    st.json(labels_res["raw"])
+            except Exception as e:
+                st.error(f"Rekognition DetectLabels: {e}")
+        else:  # OpenCV Template Matching (local)
+            if not cv_templates:
+                st.info("Sube al menos una plantilla (recorte) en la barra lateral.")
             else:
-                ref_img = Image.open(ref_logo_file).convert("RGB")
-                boxes = rk.template_match_logo(image, ref_img, threshold=float(umbral_tm))
-                if boxes:
-                    st.success(f"Coincidencias de la imagen de referencia: {len(boxes)}")
-                    vis = rk.draw_boxes(image, boxes, width=5)
-                    st.image(vis, caption="Ubicación estimada (imagen de referencia)")
-                else:
-                    st.info("Sin coincidencias (o OpenCV no está instalado). Prueba otro umbral o un recorte más limpio.")
+                try:
+                    cv_m = OpenCVMatcher(use_edges=cv_use_edges, use_clahe=cv_use_clahe)
+
+                    # Carga plantillas
+                    templates = {}
+                    max_tpl_w, max_tpl_h = 0, 0
+                    for f in cv_templates:
+                        name = os.path.splitext(os.path.basename(f.name))[0]
+                        tpl_img = Image.open(f).convert("RGB")
+                        templates[name] = tpl_img
+                        w, h = tpl_img.size
+                        max_tpl_w = max(max_tpl_w, w)
+                        max_tpl_h = max(max_tpl_h, h)
+
+                    detections = []
+
+                    if cv_basic:
+                        # === MODO BÁSICO (estilo artículo): 1 sola escala ===
+                        for name, tpl in templates.items():
+                            detections.extend(
+                                cv_m.match_article_style(
+                                    image, tpl, tpl_name=name,
+                                    threshold=float(cv_threshold),
+                                    tpl_scale=float(cv_basic_scale),
+                                    nms_iou=float(cv_nms_iou),
+                                    max_hits=int(cv_max_per_tpl),
+                                )
+                            )
+                    else:
+                        # === MODO AVANZADO (multi-escala) ===
+                        # Filtra escalas que harían que la plantilla exceda el billete (evita errores de OpenCV)
+                        W, H = image.size
+                        raw_scales = _parse_scales(cv_scales_str)
+                        safe_scales = [
+                            s for s in raw_scales
+                            if int(max_tpl_w * s) <= W and int(max_tpl_h * s) <= H
+                        ]
+                        if not safe_scales:
+                            st.warning("Todas las escalas propuestas exceden el tamaño del billete. Prueba valores menores.")
+                            safe_scales = [1.0]
+
+                        detections = cv_m.match_multiple(
+                            image, templates,
+                            threshold=float(cv_threshold),
+                            scales=safe_scales,
+                            nms_iou=float(cv_nms_iou),
+                            max_per_template=int(cv_max_per_tpl),
+                        )
+
+                    if detections:
+                        vis = cv_m.draw_detections(image, detections)
+                        st.image(vis, caption="Detecciones OpenCV (local)")
+                        st.markdown("#### Resultados")
+                        for d in detections[:100]:
+                            st.markdown(f"- **{d.name}** · score {d.score:.3f} · box {d.box} · scale {d.scale}")
+                    else:
+                        # Diagnóstico: muestra el mejor score y dónde está, para ayudar a ajustar
+                        best = cv_m.find_best_of_templates(image, templates, scales=safe_scales if not cv_basic else [cv_basic_scale])
+                        if best is not None:
+                            st.info("OpenCV: sin detecciones a ese umbral/plantillas.")
+                            st.markdown(
+                                f"**Mejor score global:** {best.score:.3f} · **plantilla:** {best.name} · **escala:** {best.scale}"
+                            )
+                            st.image(cv_m.draw_detections(image, [best]),
+                                    caption="Mejor coincidencia (no supera el umbral)")
+                            st.caption("Sugerencia: baja el umbral cerca del score mostrado, prueba desactivar Canny o añade escalas alrededor de la indicada.")
+                        else:
+                            st.info("OpenCV: no hubo ninguna coincidencia razonable (revisa el recorte y las escalas).")
+
+                except Exception as e:
+                    st.error(f"OpenCV (local): {e}")
 
 elif submitted and image is None:
     st.error("Debes subir una imagen para realizar la validación.")
