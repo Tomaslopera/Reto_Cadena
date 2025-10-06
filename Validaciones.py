@@ -20,7 +20,7 @@ class Validaciones:
         texto = texto.lower().replace("\n", " ")
         return re.sub(r"\s+", " ", texto)
 
-    # Checks
+    # --- Checks ---
     def check_sorteo(self): return self.sorteo in self.text
     def check_fecha(self):
         variantes = [self.fecha_sorteo,
@@ -47,7 +47,7 @@ class Validaciones:
             "numero": self.check_numero(),
         }
 
-    # Conteos
+    # --- Conteos ---
     def count_sorteo(self): return self.text.count(self.sorteo)
     def count_fecha(self):
         variantes = {self.fecha_sorteo,

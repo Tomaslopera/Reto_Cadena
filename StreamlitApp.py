@@ -1,18 +1,12 @@
-# --- Streamlit + Textract + Rekognition (Etiquetas) + OpenCV (Template Matching) ---
-
 import os
 from io import BytesIO
 import streamlit as st
 from PIL import Image
-
 from Validaciones import Validaciones
 from TextractOCR import TextractOCR
-from RekognitionService import RekognitionService           # usa detect_labels y draw_label_instances_with_names
-from OpenCVMatcher import OpenCVMatcher                     # usa match_multiple y match_article_style
+from RekognitionService import RekognitionService           
+from OpenCVMatcher import OpenCVMatcher
 
-# =========================
-# Configuración de página
-# =========================
 st.set_page_config(page_title="Reto FT - Cadena SA", layout="centered")
 st.markdown(
     "<h1 style='color: white; background-color:#1e3a5f; padding:1px; text-align:center;'>"
@@ -20,9 +14,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# =========================
-# Barra lateral
-# =========================
+## --- Barra lateral ---
 st.sidebar.header("Análisis visual")
 modo_analisis = st.sidebar.radio(
     "¿Qué análisis quieres ejecutar?",
@@ -37,10 +29,9 @@ aws_region = st.sidebar.text_input("AWS Region", value="us-east-1")
 max_labels = st.sidebar.slider("Máximo de etiquetas", 5, 100, 30)
 min_conf_labels = st.sidebar.slider("Confianza mínima (%)", 50, 99, 70)
 
-# --- Parámetros OpenCV (Básico) ---
+# --- Parámetros OpenCV ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("OpenCV básico (estilo artículo)")
-cv_basic = st.sidebar.checkbox("Usar modo básico (1 sola escala)", value=False)
+st.sidebar.subheader("OpenCV")
 cv_basic_scale = st.sidebar.number_input(
     "Escala de plantilla (p. ej. 0.48)",
     min_value=0.10, max_value=3.00, value=1.00, step=0.02
@@ -50,17 +41,7 @@ cv_templates = st.sidebar.file_uploader(
     type=["png", "jpg", "jpeg"],
     accept_multiple_files=True
 )
-
-# --- Parámetros OpenCV (Template Matching avanzado) ---
-# st.sidebar.markdown("---")
-# st.sidebar.subheader("OpenCV – Template Matching (local)")
-# cv_threshold = st.sidebar.slider("Umbral (TM_CCOEFF_NORMED)", 50, 99, 75) / 100.0
-# cv_scales_str = st.sidebar.text_input("Escalas (coma)", value="1.4,1.3,1.2,1.1,1.0,0.95,0.9,0.85,0.8,0.75")
-# cv_use_edges = st.sidebar.checkbox("Usar Canny (bordes)", value=True)
-# cv_use_clahe = st.sidebar.checkbox("Usar CLAHE (contraste)", value=True)
-# cv_nms_iou = st.sidebar.slider("NMS IoU", 10, 90, 40) / 100.0
-# cv_max_per_tpl = st.sidebar.slider("Máx. detecciones por plantilla", 10, 200, 50)
-cv_threshold = 75
+cv_threshold = st.sidebar.slider("Umbral de coincidencia (0-100)", 50, 100, 75, 1)
 cv_scales_str = "1.4,1.3,1.2,1.1,1.0,0.95,0.9,0.85,0.8,0.75"
 cv_use_edges = True
 cv_use_clahe = True
@@ -74,9 +55,7 @@ def _parse_scales(s: str):
     except Exception:
         return [1.0]
 
-# =========================
-# Carga de imagen FT
-# =========================
+## --- Carga imagen ---
 st.write("## Sube una imagen del billete")
 uploaded_file = st.file_uploader("Selecciona una imagen", type=["png", "jpg", "jpeg"])
 
@@ -86,9 +65,7 @@ if uploaded_file:
 else:
     image = None
 
-# =========================
-# Formulario de parámetros (Textract/Validaciones)
-# =========================
+## --- Parámetros validación ---
 st.write("## Parámetros de validación")
 with st.form("parametros_form"):
     sorteo = st.text_input("Sorteo")
@@ -103,9 +80,7 @@ with st.form("parametros_form"):
 
     submitted = st.form_submit_button("Ejecutar validación")
 
-# =========================
-# Pipeline
-# =========================
+## --- Procesamiento ---
 if submitted and image is not None:
     with st.spinner("Procesando imagen con Textract y validando..."):
         # ----------- TEXTRACT -----------
@@ -151,7 +126,7 @@ if submitted and image is not None:
         # ----------- ANÁLISIS VISUAL -----------
         st.subheader("Análisis visual")
 
-        # preparar bytes de imagen (para AWS)
+        # ----- AWS REKOGNITION - ETIQUETAS -----
         buff = BytesIO(); image.save(buff, format="PNG"); img_bytes = buff.getvalue()
 
         if modo_analisis == "Etiquetas (Rekognition)":
@@ -172,7 +147,6 @@ if submitted and image is not None:
                 else:
                     st.info("Sin etiquetas a ese umbral.")
 
-                # Dibujo de instancias (si existen)
                 if labels_res["labeled_boxes"]:
                     vis_img = rk.draw_labeled_boxes(image, labels_res["labeled_boxes"])
                     st.image(vis_img, caption="Cajas detectadas (DetectLabels)")
@@ -180,14 +154,15 @@ if submitted and image is not None:
                     st.json(labels_res["raw"])
             except Exception as e:
                 st.error(f"Rekognition DetectLabels: {e}")
-        else:  # OpenCV Template Matching (local)
+        # ----- OpenCV - RECONOCIMIENTO IMÁGENES -----
+        else:
             if not cv_templates:
                 st.info("Sube al menos una plantilla (recorte) en la barra lateral.")
             else:
                 try:
                     cv_m = OpenCVMatcher(use_edges=cv_use_edges, use_clahe=cv_use_clahe)
-
-                    # Carga plantillas
+                    
+                    # --- Carga plantillas ---
                     templates = {}
                     max_tpl_w, max_tpl_h = 0, 0
                     for f in cv_templates:
@@ -198,58 +173,41 @@ if submitted and image is not None:
                         max_tpl_w = max(max_tpl_w, w)
                         max_tpl_h = max(max_tpl_h, h)
 
+                    # --- Matching múltiple ---
                     detections = []
+                    W, H = image.size
+                    raw_scales = _parse_scales(cv_scales_str)
+                    safe_scales = [
+                        s for s in raw_scales
+                        if int(max_tpl_w * s) <= W and int(max_tpl_h * s) <= H
+                    ]
+                    if not safe_scales:
+                        st.warning("Todas las escalas propuestas exceden el tamaño del billete. Prueba valores menores.")
+                        safe_scales = [1.0]
 
-                    if cv_basic:
-                        # === MODO BÁSICO (estilo artículo): 1 sola escala ===
-                        for name, tpl in templates.items():
-                            detections.extend(
-                                cv_m.match_article_style(
-                                    image, tpl, tpl_name=name,
-                                    threshold=float(cv_threshold),
-                                    tpl_scale=float(cv_basic_scale),
-                                    nms_iou=float(cv_nms_iou),
-                                    max_hits=int(cv_max_per_tpl),
-                                )
-                            )
-                    else:
-                        # === MODO AVANZADO (multi-escala) ===
-                        # Filtra escalas que harían que la plantilla exceda el billete (evita errores de OpenCV)
-                        W, H = image.size
-                        raw_scales = _parse_scales(cv_scales_str)
-                        safe_scales = [
-                            s for s in raw_scales
-                            if int(max_tpl_w * s) <= W and int(max_tpl_h * s) <= H
-                        ]
-                        if not safe_scales:
-                            st.warning("Todas las escalas propuestas exceden el tamaño del billete. Prueba valores menores.")
-                            safe_scales = [1.0]
+                    detections = cv_m.match_multiple(
+                        image, templates,
+                        threshold=float(cv_threshold),
+                        scales=safe_scales,
+                        nms_iou=float(cv_nms_iou),
+                        max_per_template=int(cv_max_per_tpl),
+                    )
 
-                        detections = cv_m.match_multiple(
-                            image, templates,
-                            threshold=float(cv_threshold),
-                            scales=safe_scales,
-                            nms_iou=float(cv_nms_iou),
-                            max_per_template=int(cv_max_per_tpl),
-                        )
-
+                    # --- Resultados ---
                     if detections:
                         vis = cv_m.draw_detections(image, detections)
-                        st.image(vis, caption="Detecciones OpenCV (local)")
+                        st.image(vis, caption="Detecciones OpenCV")
                         st.markdown("#### Resultados")
                         for d in detections[:100]:
                             st.markdown(f"- **{d.name}** · score {d.score:.3f} · box {d.box} · scale {d.scale}")
                     else:
-                        # Diagnóstico: muestra el mejor score y dónde está, para ayudar a ajustar
-                        best = cv_m.find_best_of_templates(image, templates, scales=safe_scales if not cv_basic else [cv_basic_scale])
+                        best = cv_m.find_best_of_templates(image, templates, scales=safe_scales)
                         if best is not None:
-                            st.info("OpenCV: sin detecciones a ese umbral/plantillas.")
                             st.markdown(
                                 f"**Mejor score global:** {best.score:.3f} · **plantilla:** {best.name} · **escala:** {best.scale}"
                             )
                             st.image(cv_m.draw_detections(image, [best]),
-                                    caption="Mejor coincidencia (no supera el umbral)")
-                            st.caption("Sugerencia: baja el umbral cerca del score mostrado, prueba desactivar Canny o añade escalas alrededor de la indicada.")
+                                    caption="Mejor coincidencia")                       
                         else:
                             st.info("OpenCV: no hubo ninguna coincidencia razonable (revisa el recorte y las escalas).")
 

@@ -7,23 +7,12 @@ class TextractOCR:
         self.textract = boto3.client("textract", region_name=aws_region)
 
     def extract_text_from_file(self, file_path):
-        """Extrae texto plano línea por línea desde una imagen"""
         with open(file_path, "rb") as image_file:
             image_bytes = image_file.read()
 
         response = self.textract.detect_document_text(Document={'Bytes': image_bytes})
-        
         raw_text = ""
         for item in response["Blocks"]:
             if item["BlockType"] == "LINE":
                 raw_text += item["Text"] + "\n"
-
         return raw_text
-
-
-    def extract_and_save(self, file_path, output_txt_path):
-        """Extrae texto y lo guarda en un archivo .txt"""
-        text = self.extract_text_from_file(file_path)
-        with open(output_txt_path, "w", encoding="utf-8") as f:
-            f.write(text)
-        return text

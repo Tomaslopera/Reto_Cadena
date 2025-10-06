@@ -1,9 +1,6 @@
-# OpenCVMatcher.py
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
 from PIL import Image, ImageDraw
-
-# OpenCV + NumPy
 import cv2
 import numpy as np
 
@@ -11,7 +8,7 @@ import numpy as np
 class Detection:
     name: str
     score: float
-    box: Tuple[int, int, int, int]   # (x1, y1, x2, y2)
+    box: Tuple[int, int, int, int]
     scale: float
 
 class OpenCVMatcher:
@@ -21,24 +18,18 @@ class OpenCVMatcher:
     - Soporta bordes (Canny) y CLAHE para contraste.
     - NMS para filtrar solapes.
     """
-
-    def __init__(self,
-                 use_edges: bool = True,
-                 use_clahe: bool = True,
-                 canny_low: int = 60,
-                 canny_high: int = 180):
+    def __init__(self, use_edges: bool = True, use_clahe: bool = True, canny_low: int = 60, canny_high: int = 180):
         self.use_edges = use_edges
         self.use_clahe = use_clahe
         self.canny_low = canny_low
         self.canny_high = canny_high
 
-    # ---------- Utils ----------
-    @staticmethod
+    @staticmethod # Convertir PIL a OpenCV (BGR)
     def _pil_to_bgr(img: Image.Image) -> np.ndarray:
         arr = np.array(img.convert("RGB"))
         return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
-    @staticmethod
+    @staticmethod # Convertir BGR a Escala de grises
     def _to_gray(bgr: np.ndarray) -> np.ndarray:
         return cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
 
@@ -52,7 +43,7 @@ class OpenCVMatcher:
             gray = cv2.Canny(gray, self.canny_low, self.canny_high)
         return gray
 
-    @staticmethod
+    @staticmethod # Non-Maximum Suppression (NMS) para filtrar solapes
     def _nms(boxes: List[Detection], iou_thr: float = 0.4) -> List[Detection]:
         if not boxes:
             return []
@@ -74,14 +65,8 @@ class OpenCVMatcher:
             boxes_sorted = [d for d in boxes_sorted if iou(cur.box, d.box) < iou_thr]
         return picked
 
-    # ---------- Matching ----------
-    def match_single_template(self,
-                            ticket_img: Image.Image,
-                            tpl_img: Image.Image,
-                            tpl_name: str,
-                            threshold: float = 0.75,
-                            scales: Optional[List[float]] = None,
-                            max_per_template: int = 50) -> List[Detection]:
+    # ---------- Matching simple por plantilla (sin NMS global) ----------
+    def match_single_template(self, ticket_img: Image.Image, tpl_img: Image.Image, tpl_name: str, threshold: float = 0.75, scales: Optional[List[float]] = None, max_per_template: int = 50) -> List[Detection]:
         """
         Devuelve las detecciones por plantilla (sin NMS global).
         Evita crash cuando la plantilla (redimensionada) es mayor que la imagen.
@@ -130,13 +115,8 @@ class OpenCVMatcher:
 
         return dets
 
-    def match_multiple(self,
-                       ticket_img: Image.Image,
-                       templates: Dict[str, Image.Image],
-                       threshold: float = 0.75,
-                       scales: Optional[List[float]] = None,
-                       nms_iou: float = 0.4,
-                       max_per_template: int = 50) -> List[Detection]:
+    # ---------- Matching múltiple con NMS global ----------
+    def match_multiple(self, ticket_img: Image.Image, templates: Dict[str, Image.Image], threshold: float = 0.75, scales: Optional[List[float]] = None, nms_iou: float = 0.4, max_per_template: int = 50) -> List[Detection]:
         """
         Ejecuta matching para 1..N plantillas y aplica NMS global.
         """
@@ -151,10 +131,7 @@ class OpenCVMatcher:
         return self._nms(all_dets, iou_thr=nms_iou)
     
     # --- Diagnóstico: mejor coincidencia global (aunque no supere umbral)
-    def find_best_of_templates(self,
-                            ticket_img: Image.Image,
-                            templates: Dict[str, Image.Image],
-                            scales: Optional[List[float]] = None) -> Optional[Detection]:
+    def find_best_of_templates(self, ticket_img: Image.Image, templates: Dict[str, Image.Image], scales: Optional[List[float]] = None) -> Optional[Detection]:
         bgr = self._pil_to_bgr(ticket_img)
         g = self._to_gray(bgr)
         g = self._preprocess(g)
@@ -188,9 +165,7 @@ class OpenCVMatcher:
 
     # ---------- Visualización ----------
     @staticmethod
-    def draw_detections(img: Image.Image,
-                        detections: List[Detection],
-                        width: int = 4) -> Image.Image:
+    def draw_detections(img: Image.Image, detections: List[Detection], width: int = 4) -> Image.Image:
         out = img.copy()
         draw = ImageDraw.Draw(out)
         for det in detections:
@@ -201,59 +176,3 @@ class OpenCVMatcher:
             draw.rectangle([(x1, max(0, y1 - th - 4)), (x1 + tw + 6, y1)], fill=(0, 200, 0))
             draw.text((x1 + 3, max(0, y1 - th - 2)), caption, fill="black")
         return out
-
-    def match_article_style(self,
-                            ticket_img: Image.Image,
-                            tpl_img: Image.Image,
-                            tpl_name: str = "template",
-                            threshold: float = 0.70,
-                            tpl_scale: float = 1.0,
-                            nms_iou: float = 0.4,
-                            max_hits: int = 200) -> List[Detection]:
-        """
-        Modo básico 'estilo artículo':
-        - 1 sola escala (tpl_scale).
-        - Gris, sin Canny/CLAHE (idéntico al ejemplo).
-        - Threshold directo sobre TM_CCOEFF_NORMED.
-        - NMS para limpiar duplicados.
-
-        Úsalo cuando ya sabes el tamaño aproximado del recorte respecto al billete.
-        """
-        # PIL -> OpenCV (BGR)
-        import cv2, numpy as np
-        bgr = self._pil_to_bgr(ticket_img)
-        tpl_bgr = self._pil_to_bgr(tpl_img)
-
-        # Gris puro (igual al artículo)
-        g  = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        tg = cv2.cvtColor(tpl_bgr, cv2.COLOR_BGR2GRAY)
-
-        # Escala de la plantilla (si no es 1.0)
-        if abs(tpl_scale - 1.0) > 1e-3:
-            new_w = max(10, int(tg.shape[1] * tpl_scale))
-            new_h = max(10, int(tg.shape[0] * tpl_scale))
-            tg = cv2.resize(tg, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-        th, tw = tg.shape[:2]
-        H, W   = g.shape[:2]
-        if th > H or tw > W:
-            return []
-
-        # matchTemplate + threshold
-        res = cv2.matchTemplate(g, tg, cv2.TM_CCOEFF_NORMED)
-        ys, xs = np.where(res >= float(threshold))
-
-        dets: List[Detection] = []
-        for (x, y) in zip(xs, ys):
-            score = float(res[y, x])
-            dets.append(Detection(
-                name=tpl_name,
-                score=score,
-                box=(int(x), int(y), int(x + tw), int(y + th)),
-                scale=tpl_scale
-            ))
-            if len(dets) >= int(max_hits):
-                break
-
-        # Limpieza de solapes
-        return self._nms(dets, iou_thr=float(nms_iou))
