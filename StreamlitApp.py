@@ -6,6 +6,7 @@ from Validaciones import Validaciones
 from TextractOCR import TextractOCR
 from RekognitionService import RekognitionService           
 from OpenCVMatcher import OpenCVMatcher
+from ValidacionTrasera import ValidacionTrasera
 
 st.set_page_config(page_title="Reto FT - Cadena SA", layout="centered")
 st.markdown(
@@ -15,6 +16,11 @@ st.markdown(
 )
 
 ## --- Barra lateral ---
+# --- Modo de validación (frontal / trasera) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Cara a validar")
+cara = st.sidebar.radio("Selecciona la cara del billete", ["Frontal", "Trasera"], index=0)
+
 st.sidebar.header("Análisis visual")
 modo_analisis = st.sidebar.radio(
     "¿Qué análisis quieres ejecutar?",
@@ -65,20 +71,62 @@ if uploaded_file:
 else:
     image = None
 
-## --- Parámetros validación ---
+# -- Parámetros validaciones ---
 st.write("## Parámetros de validación")
-with st.form("parametros_form"):
-    sorteo = st.text_input("Sorteo")
-    fecha_sorteo = st.text_input("Fecha del sorteo")
-    dia_de_juego = st.text_input("Día de juego")
-    hora_de_juego = st.text_input("Hora de juego")
-    premio_mayor = st.text_input("Premio mayor")
-    valor_billete = st.text_input("Valor del billete")
-    valor_fraccion = st.text_input("Valor de la fracción")
-    serie = st.text_input("Serie")
-    numero = st.text_input("Número")
+if cara == "Frontal":
+    with st.form("parametros_frontales"):
+        st.markdown("**¿Qué campos (frontal) quieres validar?**")
+        campos_front_disponibles = [
+            "sorteo","fecha","dia","hora",
+            "premio_mayor","valor_billete","valor_fraccion",
+            "serie","numero"
+        ]
+        campos_a_validar = st.multiselect(
+            "",
+            options=campos_front_disponibles,
+            default=campos_front_disponibles
+        )
 
-    submitted = st.form_submit_button("Ejecutar validación")
+        sorteo = st.text_input("Sorteo")
+        fecha_sorteo = st.text_input("Fecha del sorteo")
+        dia_de_juego = st.text_input("Día de juego")
+        hora_de_juego = st.text_input("Hora de juego")
+        premio_mayor = st.text_input("Premio mayor")
+        valor_billete = st.text_input("Valor del billete")
+        valor_fraccion = st.text_input("Valor de la fracción")
+        serie = st.text_input("Serie")
+        numero = st.text_input("Número")
+
+        submitted = st.form_submit_button("Ejecutar validación")
+else:
+    with st.form("parametros_traseros"):
+        st.markdown("**¿Qué campos (trasera) quieres validar?**")
+        campos_back_disponibles = [
+            "fecha","sorteo","valor_billete","valor_fraccion",
+            "premio_mayor","total_plan_premios","series"
+        ]
+        campos_a_validar = st.multiselect(
+            "",
+            options=campos_back_disponibles,
+            default=campos_back_disponibles
+        )
+
+        # Campos típicos de la cara trasera (según tu imagen/RAW):
+        fecha_sorteo = st.text_input("Fecha del sorteo")
+        sorteo = st.text_input("Número de sorteo")
+        valor_billete = st.text_input("Valor del billete")
+        valor_fraccion = st.text_input("Valor de la fracción")
+        premio_mayor = st.text_input("Premio mayor")
+        total_plan_premios = st.text_input("Total plan premios")
+        series = st.text_input("Series")
+
+        # variables no usadas en trasera pero esperadas por tu código existente
+        dia_de_juego = ""
+        hora_de_juego = ""
+        serie = ""
+        numero = ""
+
+        submitted = st.form_submit_button("Ejecutar validación")
 
 ## --- Procesamiento ---
 if submitted and image is not None:
@@ -99,18 +147,34 @@ if submitted and image is not None:
             pass
 
         # ----------- VALIDACIONES TEXTO -----------
-        validador = Validaciones(
-            raw_text=raw_text,
-            sorteo=sorteo,
-            fecha_sorteo=fecha_sorteo,
-            dia_de_juego=dia_de_juego,
-            hora_de_juego=hora_de_juego,
-            premio_mayor=premio_mayor,
-            valor_billete=valor_billete,
-            valor_fraccion=valor_fraccion,
-            serie=serie,
-            numero=numero,
-        )
+        if cara == "Frontal":
+            from Validaciones import Validaciones  # tu clase frontal
+            validador = Validaciones(
+                raw_text=raw_text,
+                sorteo=sorteo,
+                fecha_sorteo=fecha_sorteo,
+                dia_de_juego=dia_de_juego,
+                hora_de_juego=hora_de_juego,
+                premio_mayor=premio_mayor,
+                valor_billete=valor_billete,
+                valor_fraccion=valor_fraccion,
+                serie=serie,
+                numero=numero,
+                checks_enabled=set(campos_a_validar),
+            )
+        else:
+            validador = ValidacionTrasera(
+                raw_text=raw_text,
+                fecha_sorteo=fecha_sorteo,
+                sorteo=sorteo,
+                valor_billete=valor_billete,
+                valor_fraccion=valor_fraccion,
+                premio_mayor=premio_mayor,
+                total_plan_premios=total_plan_premios,
+                series=series,
+                checks_enabled=set(campos_a_validar),
+            )
+
         resultados = validador.run_all_checks()
         counts = validador.run_all_counts()
 
@@ -122,6 +186,16 @@ if submitted and image is not None:
         st.info("Conteo de coincidencias")
         for clave, valor in counts.items():
             st.markdown(f"- **{clave}**: {valor}")
+
+        # BONUS DEMO: resumen compacto para mostrar en la presentación
+        with st.expander("Resumen para DEMO"):
+            st.json({
+                "cara": cara,
+                "campos_validados": list(resultados.keys()),
+                "validados_ok": [k for k, v in resultados.items() if v],
+                "total_ok": sum(1 for v in resultados.values() if v),
+                "total_fallos": sum(1 for v in resultados.values() if not v),
+            })
 
         # ----------- ANÁLISIS VISUAL -----------
         st.subheader("Análisis visual")

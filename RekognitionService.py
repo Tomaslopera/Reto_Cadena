@@ -1,4 +1,3 @@
-# RekognitionService.py
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from io import BytesIO
@@ -18,14 +17,13 @@ class RekognitionService:
     def __init__(self, region_name: str = "us-east-1"):
         self.client = boto3.client("rekognition", region_name=region_name)
 
-    # ---------- Utilidades ----------
-    @staticmethod
+    @staticmethod # Convertir PIL a bytes PNG
     def pil_to_bytes(img: Image.Image) -> bytes:
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         return buf.getvalue()
 
-    @staticmethod
+    @staticmethod # Convertir bounding box normalizada a píxeles
     def _normbox_to_pixels(bbox: Dict, img_w: int, img_h: int) -> Tuple[int, int, int, int]:
         x1 = int(bbox["Left"] * img_w)
         y1 = int(bbox["Top"] * img_h)
@@ -33,7 +31,7 @@ class RekognitionService:
         y2 = int((bbox["Top"] + bbox["Height"]) * img_h)
         return x1, y1, x2, y2
 
-    @staticmethod
+    @staticmethod # Fuente segura (Arial o DejaVuSans, o por defecto)
     def _safe_font(size: int = 16):
         try:
             return ImageFont.truetype("arial.ttf", size=size)
