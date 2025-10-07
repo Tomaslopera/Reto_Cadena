@@ -43,8 +43,8 @@ La demo muestra:
 ├── TextractOCR.py              # OCR (Amazon Textract)
 ├── RekognitionService.py       # Etiquetas + cajas (Amazon Rekognition)
 ├── README.md                   
-├── Diagramas/              # Arquitecturas de Implementación
-└── FT Prueba Concepto/                # Imágenes de ejemplo para la demo
+├── Diagramas/                  # Arquitecturas de Implementación
+└── FT Prueba Concepto/         # Imágenes de ejemplo para la demo
 ```
 
 ## Requisitos
@@ -102,7 +102,7 @@ Streamlit run StreamlitApp.py
    - Los **resultados de validación** (OK/FALLO).
    - Los **análisis visuales** de OpenCV o Rekognition.
 
-## 🔬 Detalles técnicos
+## Detalles técnicos
 
 ### TextractOCR
 - Usa el método `detect_document_text` de **Amazon Textract**.  
