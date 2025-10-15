@@ -152,7 +152,7 @@ class Validaciones:
         return self._contains_fuzzy(self.dia_de_juego)
 
     def check_hora(self) -> bool:
-        return self._contains_fuzzy(self.hora_de_juego)
+        return self.hora_de_juego in self.text
 
     def check_premio_mayor(self) -> bool:
         return self._check_number_like(self.premio_mayor)
@@ -199,7 +199,7 @@ class Validaciones:
         return self._count_fuzzy(self.dia_de_juego)
 
     def count_hora(self) -> int:
-        return self._count_fuzzy(self.hora_de_juego)
+        return self.text.count(self.hora_de_juego)
 
     def count_premio_mayor(self) -> int:
         return self._count_number_like(self.premio_mayor)
