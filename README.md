@@ -77,7 +77,7 @@ AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxx
 AWS_DEFAULT_REGION=us-east-1
 ```
 
-## Ejecuciñon de la demo
+## Ejecución de la demo
 ```bash
 Streamlit run StreamlitApp.py
 ```
